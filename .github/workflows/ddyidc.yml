@@ -2,7 +2,7 @@ name: 自动签到大东云
 
 on:
   schedule:
-    - cron: '0 22 * * *' # 每天一次，UTC 时间晚上 10 点运行（即北京时间早上 6 点）
+    - cron: '0 22 * * *' # 每天北京时间早上 6 点
   workflow_dispatch:
 
 jobs:
@@ -13,13 +13,29 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: 从文件读取需要签到的ID
+    - name: 准备环境并生成配置文件
       run: |
         sudo apt-get install -y jq
+        # 这里直接生成 sign.json，确保没有任何隐藏字符或编码问题
+        cat > sign.json <<EOF
+        {
+          "ddyidc": [1332],
+          "yfidc": [114514, 123456],
+          "anvps": [114514, 123456]
+        }
+        EOF
+
+    - name: 执行签到脚本
+      run: |
+        # 读取刚刚生成的 sign.json
         uid_list=$(jq -r '.ddyidc[]' sign.json)
+        
         for uid in $uid_list; do
           echo "即将签到用户: $uid"
+          # 发起请求
           response=$(curl -s -X POST -d "uid=${uid}" "https://dadongyun.com/addons?_plugin=26&_controller=index&_action=index")
-          msg=$(echo "$response" | jq -r '.msg')
-          echo "用户 $uid : $msg"
+          
+          # 解析返回的 msg 字段
+          msg=$(echo "$response" | jq -r '.msg' 2>/dev/null || echo "解析返回信息失败")
+          echo "用户 $uid 签到结果: $msg"
         done
