@@ -1,41 +1,46 @@
-name: 自动签到大东云
+name: 自动签到大东云 
 
-on:
-  schedule:
-    - cron: '0 22 * * *' # 每天北京时间早上 6 点
-  workflow_dispatch:
+on: 
+  schedule: 
+    - cron: '0 22 * * *' # 北京时间早上 6 点
+  workflow_dispatch: 
 
-jobs:
-  read-and-access:
-    runs-on: ubuntu-latest
+jobs: 
+  read-and-access: 
+    runs-on: ubuntu-latest 
 
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
+    steps: 
+    - name: Checkout repository 
+      uses: actions/checkout@v2 
 
-    - name: 准备环境并生成配置文件
-      run: |
-        sudo apt-get install -y jq
-        # 这里直接生成 sign.json，确保没有任何隐藏字符或编码问题
-        cat > sign.json <<EOF
-        {
-          "ddyidc": [1332],
-          "yfidc": [114514, 123456],
-          "anvps": [114514, 123456]
-        }
-        EOF
+    - name: 签到任务
+      run: | 
+        # 1. 安装 jq
+        sudo apt-get install -y jq 
 
-    - name: 执行签到脚本
-      run: |
-        # 读取刚刚生成的 sign.json
-        uid_list=$(jq -r '.ddyidc[]' sign.json)
-        
-        for uid in $uid_list; do
-          echo "即将签到用户: $uid"
-          # 发起请求
-          response=$(curl -s -X POST -d "uid=${uid}" "https://dadongyun.com/addons?_plugin=26&_controller=index&_action=index")
+        # 2. 【核心修复】强制清洗 sign.json：移除 BOM 头并将换行符转为 Linux 格式
+        # 如果文件不存在，这步也不会报错
+        if [ -f sign.json ]; then
+          sed -i '1s/^\xef\xbb\xbf//' sign.json
+          tr -d '\r' < sign.json > sign_clean.json
+          mv sign_clean.json sign.json
+        else
+          # 如果你还没上传文件，这里会自动创建一个默认的
+          echo '{"ddyidc": [1332], "yfidc": [114514], "anvps": [114514]}' > sign.json
+        fi
+
+        # 3. 读取并执行
+        uid_list=$(jq -r '.ddyidc[]' sign.json) 
+
+        for uid in $uid_list; do 
+          echo "即将签到用户: $uid" 
+          response=$(curl -s -X POST -d "uid=${uid}" "https://dadongyun.com/addons?_plugin=26&_controller=index&_action=index") 
           
-          # 解析返回的 msg 字段
-          msg=$(echo "$response" | jq -r '.msg' 2>/dev/null || echo "解析返回信息失败")
-          echo "用户 $uid 签到结果: $msg"
+          # 增加安全性检查：如果 response 为空或非 JSON，不让 jq 报错
+          if echo "$response" | jq . >/dev/null 2>&1; then
+            msg=$(echo "$response" | jq -r '.msg')
+            echo "用户 $uid 响应: $msg"
+          else
+            echo "用户 $uid 响应异常（非 JSON）: $response"
+          fi
         done
